@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#000000" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Kindle Reader" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- Prevent zoom and scrolling issues on iPad -->
+    <meta name="format-detection" content="telephone=no" />
+    <style>
+      /* Prevent text selection and callouts on iOS */
+      * {
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      /* Allow text selection in reader */
+      .pdf-page * {
+        -webkit-user-select: text !important;
+      }
+
+      /* Prevent overscroll/bounce on iOS */
+      body {
+        overscroll-behavior: none;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      /* Ensure proper touch targets */
+      button, [role="button"] {
+        min-height: 44px;
+        min-width: 44px;
+      }
+    </style>
+
+    <link rel="manifest" href="/manifest.json" />
+    <title>Kindle Reader</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
