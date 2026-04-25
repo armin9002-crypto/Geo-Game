@@ -88,6 +88,51 @@ function App() {
     }
   }
 
+  const decodeBookData = (fileData) => {
+    if (!fileData) return null
+
+    if (fileData instanceof ArrayBuffer) {
+      return fileData
+    }
+
+    if (fileData instanceof Uint8Array) {
+      return fileData.buffer.slice(fileData.byteOffset, fileData.byteOffset + fileData.byteLength)
+    }
+
+    if (typeof fileData === 'string') {
+      const base64 = fileData.startsWith('data:') ? fileData.split(',')[1] : fileData
+      try {
+        const binaryString = atob(base64)
+        const bytes = new Uint8Array(binaryString.length)
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i)
+        }
+        return bytes.buffer
+      } catch (decodeError) {
+        console.error('Error decoding base64 book data:', decodeError)
+        return null
+      }
+    }
+
+    if (Array.isArray(fileData)) {
+      return new Uint8Array(fileData).buffer
+    }
+
+    if (fileData.data && Array.isArray(fileData.data)) {
+      return new Uint8Array(fileData.data).buffer
+    }
+
+    if (fileData.buffer && fileData.byteLength) {
+      try {
+        return new Uint8Array(fileData.buffer).buffer
+      } catch {
+        return null
+      }
+    }
+
+    return null
+  }
+
   const handleFileUpload = async (event) => {
     const file = event.target.files[0]
     if (!file) return
@@ -103,14 +148,17 @@ function App() {
     try {
       console.log('Uploading file:', file.name, 'Size:', file.size)
 
-      // Use ArrayBuffer for better Safari compatibility
-      const arrayBuffer = await file.arrayBuffer()
-      const uint8Array = new Uint8Array(arrayBuffer)
+      const base64Data = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result)
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
 
       const book = {
         id: Date.now().toString(),
         name: file.name.replace(/\.(pdf|epub)$/i, ''),
-        fileData: uint8Array,
+        fileData: base64Data,
         uploadedAt: new Date().toISOString(),
         size: file.size,
         type
@@ -160,22 +208,9 @@ function App() {
       setBookSections([])
       setCurrentPage(1)
 
-      // Handle different data formats for compatibility
-      let fileData
-      if (book.fileData instanceof Uint8Array) {
-        fileData = book.fileData.buffer.slice(book.fileData.byteOffset, book.fileData.byteOffset + book.fileData.byteLength)
-      } else if (typeof book.fileData === 'string' && book.fileData.startsWith('data:')) {
-        // Handle legacy base64 data URL
-        const base64 = book.fileData.split(',')[1]
-        const binaryString = atob(base64)
-        const bytes = new Uint8Array(binaryString.length)
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i)
-        }
-        fileData = bytes.buffer
-      } else {
-        // Fallback for other formats
-        fileData = book.fileData || (await book.file.arrayBuffer())
+      const fileData = decodeBookData(book.fileData)
+      if (!fileData) {
+        throw new Error('Unable to read stored book data. Please re-upload the file.')
       }
 
       let sections = []
@@ -490,25 +525,33 @@ function App() {
                 <button
                   onClick={() => changeTheme('light')}
                   className={`p-2 rounded-full transition-all duration-200 ${theme === 'light' ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-md' : 'text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                  aria-pressed={theme === 'light'}
                 >
                   <Sun size={16} />
                 </button>
                 <button
                   onClick={() => changeTheme('sepia')}
                   className={`p-2 rounded-full transition-all duration-200 ${theme === 'sepia' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                  aria-pressed={theme === 'sepia'}
                 >
                   <Palette size={16} />
                 </button>
                 <button
                   onClick={() => changeTheme('dark')}
                   className={`p-2 rounded-full transition-all duration-200 ${theme === 'dark' ? 'bg-slate-700 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                  aria-pressed={theme === 'dark'}
                 >
                   <Moon size={16} />
                 </button>
               </div>
 
-              <div className="text-sm font-semibold text-slate-700 dark:text-slate-300 bg-slate-100/60 dark:bg-slate-800/60 px-3 py-2 rounded-full backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50">
-                {currentPage} / {numPages || '?'}
+              <div className="flex items-center gap-3">
+                <div className="text-sm font-semibold text-slate-700 dark:text-slate-300 bg-slate-100/60 dark:bg-slate-800/60 px-3 py-2 rounded-full backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50">
+                  Theme: {theme === 'light' ? 'Light' : theme === 'sepia' ? 'Sepia' : 'Dark'}
+                </div>
+                <div className="text-sm font-semibold text-slate-700 dark:text-slate-300 bg-slate-100/60 dark:bg-slate-800/60 px-3 py-2 rounded-full backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50">
+                  {currentPage} / {numPages || '?'}
+                </div>
               </div>
             </div>
           </div>
@@ -742,6 +785,7 @@ function App() {
               onClick={() => changeTheme('light')}
               className={`p-3 rounded-2xl transition-all duration-300 ${theme === 'light' ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-xl scale-110' : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/30 dark:hover:bg-slate-700/50'}`}
               title="Light Theme"
+              aria-pressed={theme === 'light'}
             >
               <Sun size={20} />
             </button>
@@ -749,6 +793,7 @@ function App() {
               onClick={() => changeTheme('sepia')}
               className={`p-3 rounded-2xl transition-all duration-300 ${theme === 'sepia' ? 'bg-amber-100 dark:bg-amber-900/70 text-amber-700 dark:text-amber-300 shadow-xl scale-110' : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/30 dark:hover:bg-slate-700/50'}`}
               title="Sepia Theme"
+              aria-pressed={theme === 'sepia'}
             >
               <Palette size={20} />
             </button>
@@ -756,9 +801,13 @@ function App() {
               onClick={() => changeTheme('dark')}
               className={`p-3 rounded-2xl transition-all duration-300 ${theme === 'dark' ? 'bg-slate-700 text-white shadow-xl scale-110' : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/30 dark:hover:bg-slate-700/50'}`}
               title="Dark Theme"
+              aria-pressed={theme === 'dark'}
             >
               <Moon size={20} />
             </button>
+          </div>
+          <div className="text-sm font-semibold text-slate-700 dark:text-slate-300 bg-slate-100/60 dark:bg-slate-800/60 px-3 py-2 rounded-full border border-slate-200/50 dark:border-slate-700/50">
+            Active theme: {theme === 'light' ? 'Light' : theme === 'sepia' ? 'Sepia' : 'Dark'}
           </div>
 
           {/* Premium Upload Button */}
