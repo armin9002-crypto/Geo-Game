@@ -103,18 +103,14 @@ function App() {
     try {
       console.log('Uploading file:', file.name, 'Size:', file.size)
 
-      // Convert file to base64 for better Safari compatibility
-      const base64Data = await new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result)
-        reader.onerror = reject
-        reader.readAsDataURL(file)
-      })
+      // Use ArrayBuffer for better Safari compatibility
+      const arrayBuffer = await file.arrayBuffer()
+      const uint8Array = new Uint8Array(arrayBuffer)
 
       const book = {
         id: Date.now().toString(),
         name: file.name.replace(/\.(pdf|epub)$/i, ''),
-        fileData: base64Data,
+        fileData: uint8Array,
         uploadedAt: new Date().toISOString(),
         size: file.size,
         type
@@ -164,10 +160,12 @@ function App() {
       setBookSections([])
       setCurrentPage(1)
 
-      // Convert base64 back to ArrayBuffer
+      // Handle different data formats for compatibility
       let fileData
-      if (typeof book.fileData === 'string' && book.fileData.startsWith('data:')) {
-        // Handle base64 data URL
+      if (book.fileData instanceof Uint8Array) {
+        fileData = book.fileData.buffer.slice(book.fileData.byteOffset, book.fileData.byteOffset + book.fileData.byteLength)
+      } else if (typeof book.fileData === 'string' && book.fileData.startsWith('data:')) {
+        // Handle legacy base64 data URL
         const base64 = book.fileData.split(',')[1]
         const binaryString = atob(base64)
         const bytes = new Uint8Array(binaryString.length)
@@ -175,9 +173,8 @@ function App() {
           bytes[i] = binaryString.charCodeAt(i)
         }
         fileData = bytes.buffer
-      } else if (book.fileData instanceof Uint8Array) {
-        fileData = book.fileData.buffer.slice(book.fileData.byteOffset, book.fileData.byteOffset + book.fileData.byteLength)
       } else {
+        // Fallback for other formats
         fileData = book.fileData || (await book.file.arrayBuffer())
       }
 
@@ -395,9 +392,15 @@ function App() {
 
   const extractEpubBookSections = async (fileData) => {
     try {
-      // Check if epubjs is available
+      // Check if epubjs is available and working
       if (!ePub) {
         throw new Error('EPUB library not loaded')
+      }
+
+      // Check if we're on Safari (which has issues with epubjs)
+      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+      if (isSafari) {
+        throw new Error('EPUB files are not supported on Safari. Please use a PDF file or try a different browser.')
       }
 
       const epubBook = ePub(fileData)
@@ -692,84 +695,86 @@ function App() {
   // Library View
   return (
     <div className={`min-h-screen ${getThemeClasses()} transition-all duration-500`}>
-      <div className="max-w-7xl mx-auto px-6 py-12">
-        {/* Minimal Header */}
-        <div className="text-center mb-20">
-          <div className="inline-flex items-center gap-4 px-6 py-3 bg-white/60 dark:bg-slate-950/60 backdrop-blur-xl rounded-full border border-white/30 dark:border-slate-700/50 mb-8 shadow-lg">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-sm">
-              <Book size={16} className="text-white" />
+      <div className="max-w-7xl mx-auto px-8 py-16">
+        {/* Modern Header */}
+        <div className="text-center mb-24">
+          <div className="inline-flex items-center gap-4 px-8 py-4 bg-white/70 dark:bg-slate-950/70 backdrop-blur-2xl rounded-2xl border border-white/30 dark:border-slate-700/50 mb-10 shadow-xl">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
+              <Book size={20} className="text-white" />
             </div>
-            <span className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wide">Library</span>
+            <span className="text-lg font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">Library</span>
           </div>
 
-          <h1 className="text-4xl md:text-5xl font-bold mb-4 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 dark:from-white dark:via-slate-100 dark:to-white bg-clip-text text-transparent leading-tight">
+          <h1 className="text-5xl md:text-7xl font-black mb-6 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 dark:from-white dark:via-slate-100 dark:to-white bg-clip-text text-transparent leading-tight tracking-tight">
             Your Digital Library
           </h1>
-          <p className="text-base md:text-lg text-slate-600 dark:text-slate-400 max-w-xl mx-auto leading-relaxed">
-            Curate your collection of books and discover new worlds through intelligent reading
+          <p className="text-xl md:text-2xl text-slate-600 dark:text-slate-400 max-w-3xl mx-auto leading-relaxed font-medium">
+            Immerse yourself in beautifully curated reading experiences with intelligent text processing and modern design
           </p>
         </div>
 
-        {/* Stats Bar */}
-        <div className="flex justify-center mb-16">
-          <div className="inline-flex gap-6 bg-white/50 dark:bg-slate-950/50 backdrop-blur-xl rounded-2xl px-6 py-4 border border-white/20 dark:border-slate-700/40 shadow-sm">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-1">
+        {/* Premium Stats Bar */}
+        <div className="flex justify-center mb-20">
+          <div className="inline-flex gap-12 bg-white/80 dark:bg-slate-950/80 backdrop-blur-3xl rounded-3xl px-12 py-8 border border-white/40 dark:border-slate-700/60 shadow-2xl shadow-slate-900/20">
+            <div className="text-center group">
+              <div className="text-6xl font-black text-blue-600 dark:text-blue-400 mb-3 group-hover:scale-110 transition-transform duration-300 drop-shadow-sm">
                 {books.length}
               </div>
-              <div className="text-xs text-slate-600 dark:text-slate-400 font-medium uppercase tracking-wide">Books</div>
+              <div className="text-lg font-bold text-slate-700 dark:text-slate-400 uppercase tracking-wider">Books</div>
+              <div className="w-16 h-1 bg-gradient-to-r from-blue-500 to-transparent rounded-full mx-auto mt-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
             </div>
-            <div className="w-px bg-slate-300/50 dark:bg-slate-600/50"></div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-1">
+            <div className="w-px bg-slate-400/40 dark:bg-slate-600/40"></div>
+            <div className="text-center group">
+              <div className="text-6xl font-black text-green-600 dark:text-green-400 mb-3 group-hover:scale-110 transition-transform duration-300 drop-shadow-sm">
                 {books.reduce((total, book) => total + (book.size || 0), 0) ? formatFileSize(books.reduce((total, book) => total + (book.size || 0), 0)) : '0 B'}
               </div>
-              <div className="text-xs text-slate-600 dark:text-slate-400 font-medium uppercase tracking-wide">Storage</div>
+              <div className="text-lg font-bold text-slate-700 dark:text-slate-400 uppercase tracking-wider">Storage</div>
+              <div className="w-16 h-1 bg-gradient-to-r from-green-500 to-transparent rounded-full mx-auto mt-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
             </div>
           </div>
         </div>
 
-        {/* Action Bar */}
-        <div className="flex justify-center items-center gap-4 mb-20 flex-wrap">
-          {/* Theme Toggle */}
-          <div className="flex items-center gap-1 bg-white/60 dark:bg-slate-950/60 backdrop-blur-xl rounded-2xl p-1 border border-white/20 dark:border-slate-700/40 shadow-sm">
+        {/* Premium Action Bar */}
+        <div className="flex justify-center items-center gap-6 mb-24 flex-wrap">
+          {/* Elegant Theme Toggle */}
+          <div className="flex items-center gap-2 bg-white/80 dark:bg-slate-950/80 backdrop-blur-3xl rounded-3xl p-2 border border-white/40 dark:border-slate-700/60 shadow-2xl shadow-slate-900/20">
             <button
               onClick={() => changeTheme('light')}
-              className={`p-2.5 rounded-xl transition-all duration-200 ${theme === 'light' ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-sm scale-105' : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
+              className={`p-3 rounded-2xl transition-all duration-300 ${theme === 'light' ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-xl scale-110' : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/30 dark:hover:bg-slate-700/50'}`}
               title="Light Theme"
             >
-              <Sun size={18} />
+              <Sun size={20} />
             </button>
             <button
               onClick={() => changeTheme('sepia')}
-              className={`p-2.5 rounded-xl transition-all duration-200 ${theme === 'sepia' ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 shadow-sm scale-105' : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
+              className={`p-3 rounded-2xl transition-all duration-300 ${theme === 'sepia' ? 'bg-amber-100 dark:bg-amber-900/70 text-amber-700 dark:text-amber-300 shadow-xl scale-110' : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/30 dark:hover:bg-slate-700/50'}`}
               title="Sepia Theme"
             >
-              <Palette size={18} />
+              <Palette size={20} />
             </button>
             <button
               onClick={() => changeTheme('dark')}
-              className={`p-2.5 rounded-xl transition-all duration-200 ${theme === 'dark' ? 'bg-slate-700 text-white shadow-sm scale-105' : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
+              className={`p-3 rounded-2xl transition-all duration-300 ${theme === 'dark' ? 'bg-slate-700 text-white shadow-xl scale-110' : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/30 dark:hover:bg-slate-700/50'}`}
               title="Dark Theme"
             >
-              <Moon size={18} />
+              <Moon size={20} />
             </button>
           </div>
 
-          {/* Upload Button */}
+          {/* Premium Upload Button */}
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isLoading}
-            className="flex items-center gap-3 px-6 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 font-medium text-sm"
+            className="flex items-center gap-4 px-8 py-4 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 dark:from-white dark:via-slate-100 dark:to-white text-white dark:text-slate-900 rounded-3xl shadow-2xl shadow-slate-900/30 hover:shadow-3xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 font-bold text-lg hover:-translate-y-1"
           >
             {isLoading ? (
               <>
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/20 dark:border-slate-900/20 border-t-white dark:border-t-slate-900"></div>
+                <div className="animate-spin rounded-full h-6 w-6 border-3 border-white/30 dark:border-slate-900/30 border-t-white dark:border-t-slate-900"></div>
                 <span>Uploading...</span>
               </>
             ) : (
               <>
-                <Plus size={18} />
+                <Plus size={24} />
                 <span>Add Book</span>
               </>
             )}
@@ -783,74 +788,83 @@ function App() {
           />
         </div>
 
-        {/* Books Grid */}
+        {/* Premium Empty State */}
         {books.length === 0 ? (
-          <div className="text-center py-24">
-            <div className="w-24 h-24 bg-slate-100 dark:bg-slate-800 rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-sm">
-              <Book size={48} className="text-slate-400 dark:text-slate-500" />
+          <div className="text-center py-32">
+            <div className="relative mb-12">
+              <div className="w-32 h-32 bg-gradient-to-br from-blue-500 via-purple-600 to-indigo-600 rounded-3xl flex items-center justify-center mx-auto shadow-2xl hover:scale-110 transition-transform duration-500">
+                <Book size={72} className="text-white" />
+              </div>
+              <div className="absolute -top-6 -right-6 w-16 h-16 bg-yellow-400 rounded-2xl flex items-center justify-center animate-bounce shadow-2xl">
+                <Plus size={28} className="text-yellow-900 font-bold" />
+              </div>
             </div>
-            <h2 className="text-3xl font-bold mb-4 text-slate-900 dark:text-white">No books yet</h2>
-            <p className="text-slate-600 dark:text-slate-400 mb-8 max-w-md mx-auto leading-relaxed">
-              Upload your first PDF or EPUB to start your reading journey
+            <h2 className="text-6xl font-black mb-6 text-slate-900 dark:text-white bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-200 bg-clip-text text-transparent">
+              Start Your Journey
+            </h2>
+            <p className="text-2xl text-slate-600 dark:text-slate-400 mb-12 max-w-2xl mx-auto leading-relaxed font-medium">
+              Upload your first PDF or EPUB and experience the future of intelligent reading with beautiful typography and seamless design
             </p>
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-3 px-6 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 hover:scale-105 font-medium text-sm"
+              className="inline-flex items-center gap-4 px-10 py-6 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 dark:from-white dark:via-slate-100 dark:to-white text-white dark:text-slate-900 rounded-3xl shadow-2xl shadow-slate-900/30 hover:shadow-3xl transition-all duration-300 text-xl font-bold hover:scale-105 hover:-translate-y-2"
             >
-              <Upload size={18} />
-              Upload Book
+              <Upload size={28} />
+              Upload Your First Book
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
             {books.map((book) => (
               <div
                 key={book.id}
-                className="group relative bg-white/70 dark:bg-slate-950/70 backdrop-blur-xl rounded-2xl p-6 cursor-pointer hover:bg-white dark:hover:bg-slate-900 border border-white/20 dark:border-slate-700/50 hover:border-slate-300 dark:hover:border-slate-600 shadow-sm hover:shadow-md transition-all duration-200 hover:scale-[1.02] overflow-hidden"
+                className="group relative bg-white/90 dark:bg-slate-950/90 backdrop-blur-3xl rounded-3xl p-8 cursor-pointer hover:bg-white dark:hover:bg-slate-900 border border-white/30 dark:border-slate-700/60 hover:border-blue-300/50 dark:hover:border-blue-500/40 shadow-2xl shadow-slate-900/20 hover:shadow-3xl transition-all duration-500 hover:scale-[1.03] overflow-hidden"
               >
-                {/* Delete Button */}
+                {/* Premium Delete Button */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
                     deleteBook(book.id)
                   }}
-                  className="absolute top-3 right-3 p-2 bg-red-500 hover:bg-red-600 text-white rounded-xl shadow-sm border border-red-400/30 opacity-0 group-hover:opacity-100 transition-all duration-200 hover:scale-110 active:scale-95"
+                  className="absolute top-4 right-4 p-3 bg-red-500 hover:bg-red-600 active:bg-red-700 text-white rounded-2xl shadow-xl border border-red-400/40 transition-all duration-300 hover:scale-110 active:scale-95 md:opacity-0 md:group-hover:opacity-100"
                   title="Delete book"
                 >
-                  <Trash2 size={14} className="text-white drop-shadow-sm" />
+                  <Trash2 size={18} className="text-white drop-shadow-sm" />
                 </button>
 
-                {/* Book Icon */}
-                <div className="flex items-center justify-center mb-5">
-                  <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-2xl shadow-sm group-hover:shadow-md transition-all duration-200 group-hover:scale-110">
-                    <FileText size={32} className="text-slate-600 dark:text-slate-400" />
+                {/* Premium Book Icon */}
+                <div className="flex items-center justify-center mb-8">
+                  <div className="p-6 bg-gradient-to-br from-blue-500 via-purple-600 to-indigo-600 rounded-3xl shadow-2xl group-hover:shadow-3xl transition-all duration-500 group-hover:scale-110 group-hover:rotate-3">
+                    <FileText size={40} className="text-white" />
                   </div>
                 </div>
 
-                {/* Book Info */}
-                <h3 className="font-semibold text-base mb-3 text-slate-900 dark:text-white text-center leading-tight line-clamp-2 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors duration-200">
+                {/* Premium Book Info */}
+                <h3 className="font-bold text-xl mb-4 text-slate-900 dark:text-white text-center leading-tight line-clamp-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors duration-300">
                   {book.name}
                 </h3>
-                <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400 text-center">
+                <div className="space-y-3 text-base text-slate-600 dark:text-slate-400 text-center">
                   <div className="flex items-center justify-center gap-2">
-                    <Clock size={12} />
-                    <span>{new Date(book.uploadedAt).toLocaleDateString()}</span>
+                    <Clock size={16} />
+                    <span className="font-medium">{new Date(book.uploadedAt).toLocaleDateString()}</span>
                   </div>
                   {book.size && (
-                    <div className="font-medium text-slate-700 dark:text-slate-300">
+                    <div className="font-bold text-slate-700 dark:text-slate-300 text-lg">
                       {formatFileSize(book.size)}
                     </div>
                   )}
                 </div>
 
-                {/* Read Button */}
+                {/* Premium Read Button */}
                 <button
                   onClick={() => openBook(book)}
-                  className="w-full mt-6 px-4 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl shadow-sm hover:shadow-md transition-all duration-200 font-medium text-sm hover:scale-105 active:scale-95"
+                  className="w-full mt-8 px-6 py-4 bg-gradient-to-r from-green-500 via-blue-500 to-purple-500 hover:from-green-600 hover:via-blue-600 hover:to-purple-600 text-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 font-bold text-lg hover:scale-105 active:scale-95 hover:-translate-y-1"
                 >
                   Read Now
                 </button>
 
+                {/* Premium Hover Effect */}
+                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-purple-500/5 to-indigo-500/10 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
               </div>
             ))}
           </div>
