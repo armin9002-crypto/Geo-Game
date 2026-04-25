@@ -4,11 +4,11 @@ A stunning, modern PDF reading app built with React, Tailwind CSS, and PDF.js. F
 
 ## ✨ Features
 
-- **📖 Smart Text Extraction**: Advanced PDF text extraction with intelligent layout detection
+- **📖 Smart Text Extraction**: Advanced PDF and EPUB text extraction with intelligent layout detection
 - **🎨 Beautiful Typography**: Customizable font sizes, justified text, and optimal line spacing
 - **🎯 Modern UI**: Glassmorphism design with smooth animations and polished interactions
-- **🌙 Multiple Themes**: Light, Sepia, and Dark reading modes with seamless transitions
-- **📊 Reading Progress**: Visual progress bar and page navigation with jump controls
+- **🌙 Multiple Themes**: Light, Sepia, and Dark grey reading modes with seamless transitions
+- **📊 Reading Progress**: Visual progress bar and app-controlled page navigation with jump controls
 - **📚 Digital Library**: Elegant grid layout with enhanced book cards and metadata
 - **🗑️ Book Management**: Delete books with confirmation dialogs
 - **💾 Progress Persistence**: Remembers your reading position across sessions
@@ -42,7 +42,7 @@ A stunning, modern PDF reading app built with React, Tailwind CSS, and PDF.js. F
 ## 🎨 Usage Guide
 
 ### Library View
-- **Upload Books**: Click "Add Book" and select PDF files
+- **Upload Books**: Click "Add Book" and select PDF or EPUB files
 - **View Stats**: See total books and storage used with animated counters
 - **Delete Books**: Hover over books to reveal delete button
 - **Switch Themes**: Use the enhanced theme toggle in the action bar

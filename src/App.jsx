@@ -3,6 +3,7 @@ import { Upload, Book, Settings, Moon, Sun, Palette, ChevronLeft, ChevronRight, 
 import localforage from 'localforage'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import ePub from 'epubjs'
 
 // Configure PDF.js worker with a bundled asset URL
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
@@ -12,12 +13,13 @@ function App() {
   const [currentBook, setCurrentBook] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [numPages, setNumPages] = useState(null)
+  const [bookPages, setBookPages] = useState([])
+  const [bookSections, setBookSections] = useState([])
   const [theme, setTheme] = useState('light')
   const [fontSize, setFontSize] = useState(18)
   const [view, setView] = useState('library') // 'library' or 'reader'
   const [isLoading, setIsLoading] = useState(false)
   const [pdfDocument, setPdfDocument] = useState(null)
-  const [pageText, setPageText] = useState('')
   const [isRendering, setIsRendering] = useState(false)
   const canvasRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -35,12 +37,15 @@ function App() {
     }
   }, [currentPage, currentBook])
 
-  // Render PDF page when document or page changes
+  // Rebuild app pages whenever text structure or font size changes
   useEffect(() => {
-    if (pdfDocument) {
-      renderPage()
-    }
-  }, [pdfDocument, currentPage])
+    if (!currentBook || !bookSections.length) return
+
+    const pages = paginateSections(bookSections, fontSize)
+    setBookPages(pages)
+    setNumPages(pages.length)
+    setCurrentPage(prev => Math.min(prev, pages.length || 1))
+  }, [bookSections, fontSize, currentBook])
 
   const loadBooks = async () => {
     try {
@@ -85,8 +90,12 @@ function App() {
 
   const handleFileUpload = async (event) => {
     const file = event.target.files[0]
-    if (!file || file.type !== 'application/pdf') {
-      alert('Please select a PDF file')
+    if (!file) return
+
+    const extension = file.name.split('.').pop().toLowerCase()
+    const type = extension === 'epub' ? 'epub' : extension === 'pdf' ? 'pdf' : null
+    if (!type) {
+      alert('Please select a PDF or EPUB file')
       return
     }
 
@@ -97,10 +106,11 @@ function App() {
 
       const book = {
         id: Date.now().toString(),
-        name: file.name.replace('.pdf', ''),
+        name: file.name.replace(/\.(pdf|epub)$/i, ''),
         fileData,
         uploadedAt: new Date().toISOString(),
-        size: file.size
+        size: file.size,
+        type
       }
 
       const updatedBooks = [...books, book]
@@ -143,38 +153,36 @@ function App() {
       setCurrentBook(book)
       setView('reader')
       setIsRendering(true)
-      setPageText('')
+      setBookPages([])
+      setBookSections([])
+      setCurrentPage(1)
 
-      const pdfData = book.fileData || (await book.file.arrayBuffer())
-      const loadingTask = pdfjsLib.getDocument({ data: pdfData })
-      const pdf = await loadingTask.promise
-      console.log('PDF loaded, pages:', pdf.numPages)
+      const fileData = book.fileData || (await book.file.arrayBuffer())
+      let sections = []
 
-      setPdfDocument(pdf)
-      setNumPages(pdf.numPages)
+      if (book.type === 'epub') {
+        sections = await extractEpubBookSections(fileData)
+      } else {
+        const loadingTask = pdfjsLib.getDocument({ data: fileData })
+        const pdf = await loadingTask.promise
+        setPdfDocument(pdf)
+        console.log('PDF loaded, pages:', pdf.numPages)
+        sections = await extractPdfBookSections(pdf)
+      }
+
+      setBookSections(sections)
+      const pages = paginateSections(sections, fontSize)
+      setBookPages(pages)
+      setNumPages(pages.length)
 
       const savedPage = await loadProgress(book.id)
-      setCurrentPage(savedPage)
+      setCurrentPage(Math.min(savedPage, pages.length || 1))
       setIsRendering(false)
     } catch (error) {
       console.error('Error opening book:', error)
-      alert('Error opening PDF: ' + error.message)
+      alert('Error opening book: ' + error.message)
       setIsRendering(false)
       setView('library')
-    }
-  }
-
-  const renderPage = async () => {
-    if (!pdfDocument) return
-
-    try {
-      const page = await pdfDocument.getPage(currentPage)
-      const textContent = await page.getTextContent()
-      const extracted = buildTextFromContent(textContent)
-      setPageText(extracted || { sections: [] })
-    } catch (error) {
-      console.error('Error rendering page:', error)
-      setPageText({ sections: [] })
     }
   }
 
@@ -200,13 +208,13 @@ function App() {
     await localforage.setItem('fontSize', newSize)
   }
 
-  const buildTextFromContent = (textContent) => {
+  const buildSectionsFromContent = (textContent) => {
     if (!textContent.items || textContent.items.length === 0) {
-      return { sections: [] }
+      return []
     }
 
     // Sort items by their vertical position (top to bottom)
-    const sortedItems = textContent.items.sort((a, b) => {
+    const sortedItems = textContent.items.slice().sort((a, b) => {
       const [, , , , , y1] = a.transform
       const [, , , , , y2] = b.transform
       return y2 - y1 // Higher Y values come first (PDF coordinate system)
@@ -216,8 +224,8 @@ function App() {
     const fontSizes = sortedItems
       .map(item => item.height || item.width)
       .filter(Boolean)
-    const avgFontSize = fontSizes.reduce((a, b) => a + b, 0) / fontSizes.length
-    const headerThreshold = avgFontSize * 1.3
+    const avgFontSize = fontSizes.length ? fontSizes.reduce((a, b) => a + b, 0) / fontSizes.length : 12
+    const headerThreshold = avgFontSize * 1.25
 
     // Group items into lines based on vertical proximity
     const lines = []
@@ -244,68 +252,153 @@ function App() {
       lines.push(currentLine)
     }
 
-    // Process lines with font size detection
     const processedLines = lines.map(line => {
       const sortedLine = line.sort((a, b) => a.x - b.x)
       const avgSize = sortedLine.reduce((sum, item) => sum + (item.item.height || avgFontSize), 0) / sortedLine.length
       const text = sortedLine.map(({ item }) => item.str).join('').trim()
-      const isHeader = avgSize > headerThreshold
+      const isHeader = avgSize > headerThreshold || text.match(/^(chapter|chapter\s+\d+|part\s+\d+)/i)
       return { text, isHeader, fontSize: avgSize }
     }).filter(line => line.text.length > 0)
 
-    // Group lines into sections (paragraphs with structure awareness)
     const sections = []
-    let currentSection = []
-    let lastWasHeader = false
+    let currentParagraph = []
 
     processedLines.forEach((line, index) => {
       if (line.isHeader) {
-        // If we have accumulated lines, save them as a paragraph
-        if (currentSection.length > 0) {
+        if (currentParagraph.length > 0) {
           sections.push({
             type: 'paragraph',
-            content: currentSection.map(l => l.text).join(' ').replace(/\s+/g, ' ')
+            content: currentParagraph.join(' ').replace(/\s+/g, ' ').trim()
           })
-          currentSection = []
+          currentParagraph = []
         }
-        // Add as header
         sections.push({
           type: 'header',
           content: line.text,
-          level: line.fontSize > avgFontSize * 1.5 ? 'h1' : 'h2'
+          level: line.fontSize > avgFontSize * 1.4 ? 'h1' : 'h2'
         })
-        lastWasHeader = true
       } else {
-        // Regular text
-        if (lastWasHeader && currentSection.length === 0) {
-          // First line after header gets special treatment
-          currentSection.push(line)
-        } else {
-          currentSection.push(line)
-        }
-        lastWasHeader = false
+        currentParagraph.push(line.text)
+        const nextLine = processedLines[index + 1]
+        const isHeaderNext = nextLine?.isHeader
+        const endsSentence = /[.!?]$/.test(line.text)
 
-        // Check for paragraph break (heuristic: after sentence-ending punctuation or unusual spacing)
-        if (line.text.match(/[.!?]$/) && Math.random() < 0.3) {
-          // 30% chance to break after sentence for now, can be refined
+        if (!nextLine || isHeaderNext || endsSentence) {
           sections.push({
             type: 'paragraph',
-            content: currentSection.map(l => l.text).join(' ').replace(/\s+/g, ' ')
+            content: currentParagraph.join(' ').replace(/\s+/g, ' ').trim()
           })
-          currentSection = []
+          currentParagraph = []
         }
       }
     })
 
-    // Add remaining section
-    if (currentSection.length > 0) {
+    if (currentParagraph.length > 0) {
       sections.push({
         type: 'paragraph',
-        content: currentSection.map(l => l.text).join(' ').replace(/\s+/g, ' ')
+        content: currentParagraph.join(' ').replace(/\s+/g, ' ').trim()
       })
     }
 
-    return { sections: sections.filter(s => s.content && s.content.trim().length > 0) }
+    return sections.filter(s => s.content && s.content.trim().length > 0)
+  }
+
+  const splitParagraphSections = (section, maxChars) => {
+    if (section.type !== 'paragraph' || section.content.length <= maxChars * 1.2) {
+      return [section]
+    }
+
+    const sentences = section.content.match(/[^.!?]+[.!?]+(?:\s|$)/g) || [section.content]
+    const splitSections = []
+    let currentText = ''
+
+    sentences.forEach(sentence => {
+      if ((currentText + sentence).length > maxChars && currentText.length > 0) {
+        splitSections.push({ type: 'paragraph', content: currentText.trim() })
+        currentText = sentence
+      } else {
+        currentText += sentence
+      }
+    })
+
+    if (currentText.trim().length > 0) {
+      splitSections.push({ type: 'paragraph', content: currentText.trim() })
+    }
+
+    return splitSections
+  }
+
+  const paginateSections = (sections, selectedFontSize) => {
+    const pageCapacity = Math.max(900, Math.round(1800 * (18 / selectedFontSize)))
+    const pages = []
+    let currentPageSections = []
+    let currentWeight = 0
+
+    sections.forEach((section) => {
+      const blocks = section.type === 'paragraph' ? splitParagraphSections(section, pageCapacity) : [section]
+
+      blocks.forEach((block) => {
+        const weight = block.type === 'header'
+          ? Math.max(90, Math.round(block.content.length * 0.7))
+          : block.content.length
+
+        if (currentWeight + weight > pageCapacity && currentPageSections.length > 0) {
+          pages.push(currentPageSections)
+          currentPageSections = []
+          currentWeight = 0
+        }
+
+        currentPageSections.push(block)
+        currentWeight += weight
+      })
+    })
+
+    if (currentPageSections.length > 0) {
+      pages.push(currentPageSections)
+    }
+
+    return pages
+  }
+
+  const extractPdfBookSections = async (pdf) => {
+    const sections = []
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum)
+      const textContent = await page.getTextContent()
+      sections.push(...buildSectionsFromContent(textContent))
+    }
+    return sections
+  }
+
+  const extractEpubBookSections = async (fileData) => {
+    try {
+      const epubBook = ePub(fileData)
+      await epubBook.ready
+      const sections = []
+
+      for (const item of epubBook.spine.spineItems) {
+        let loaded
+        try {
+          loaded = await item.load()
+        } catch {
+          loaded = await item.load(epubBook.load.bind(epubBook))
+        }
+
+        const doc = loaded?.document || item.document
+        const text = doc?.body?.textContent || ''
+        if (text.trim()) {
+          const normalized = text.replace(/\s+/g, ' ').trim()
+          sections.push({ type: 'paragraph', content: normalized })
+        }
+
+        if (item.unload) item.unload()
+      }
+
+      return sections.filter(s => s.content && s.content.trim().length > 0)
+    } catch (error) {
+      console.error('Error extracting EPUB:', error)
+      return [{ type: 'paragraph', content: 'Unable to load EPUB content. Please check the file or try another EPUB.' }]
+    }
   }
 
   const goToPrevPage = () => {
@@ -327,7 +420,7 @@ function App() {
   const getThemeClasses = () => {
     switch (theme) {
       case 'dark':
-        return 'bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.16),_transparent_25%),radial-gradient(circle_at_bottom_right,_rgba(168,85,247,0.14),_transparent_28%),linear-gradient(180deg,#020617,#0f172a)] text-slate-100'
+        return 'bg-[radial-gradient(circle_at_top_left,_rgba(148,163,184,0.18),_transparent_20%),radial-gradient(circle_at_bottom_right,_rgba(71,85,105,0.16),_transparent_24%),linear-gradient(180deg,#0c1118,#1b2430)] text-slate-100'
       case 'sepia':
         return 'bg-[radial-gradient(circle_at_top_left,_rgba(245,158,11,0.14),_transparent_28%),linear-gradient(180deg,#fef3c7,#fff7ed)] text-amber-900'
       default:
@@ -452,9 +545,9 @@ function App() {
                       wordBreak: 'break-word'
                     }}
                   >
-                    {pageText && pageText.sections && pageText.sections.length > 0 ? (
+                    {bookPages[currentPage - 1] && bookPages[currentPage - 1].length > 0 ? (
                       <div className="space-y-6">
-                        {pageText.sections.map((section, index) => {
+                        {bookPages[currentPage - 1].map((section, index) => {
                           if (section.type === 'header') {
                             return (
                               <div key={index} className={`mt-8 mb-6 ${index === 0 ? 'mt-0' : ''}`}>
@@ -464,13 +557,13 @@ function App() {
                                 <div className="w-12 h-1 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full mt-3"></div>
                               </div>
                             )
-                          } else {
-                            return (
-                              <p key={index} className="text-justify indent-8 first:indent-0">
-                                {section.content}
-                              </p>
-                            )
                           }
+
+                          return (
+                            <p key={index} className="text-justify indent-8 first:indent-0">
+                              {section.content}
+                            </p>
+                          )
                         })}
                       </div>
                     ) : (
@@ -480,7 +573,7 @@ function App() {
                         </div>
                         <h3 className="text-lg font-medium text-slate-600 dark:text-slate-400 mb-2">No readable text found</h3>
                         <p className="text-sm text-slate-500 dark:text-slate-500 max-w-md">
-                          This page may contain images, scanned content, or non-selectable text. Try navigating to another page or check if the PDF contains readable text.
+                          This section may contain images, scanned content, or non-selectable text. Adjust the font size or try another document.
                         </p>
                       </div>
                     )}
@@ -657,7 +750,7 @@ function App() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf"
+            accept=".pdf,.epub"
             onChange={handleFileUpload}
             className="hidden"
           />
@@ -676,7 +769,7 @@ function App() {
             </div>
             <h2 className="text-5xl font-bold mb-4 text-slate-900 dark:text-white">Start Reading</h2>
             <p className="text-lg text-slate-600 dark:text-slate-300 mb-10 max-w-lg mx-auto leading-relaxed font-medium">
-              Upload your first PDF to experience beautiful, intelligent reading with smart paragraph detection and modern design.
+              Upload your first PDF or EPUB to experience beautiful, intelligent reading with smart paragraph detection and modern design.
             </p>
             <button
               onClick={() => fileInputRef.current?.click()}
