@@ -102,12 +102,15 @@ function App() {
     setIsLoading(true)
     try {
       console.log('Uploading file:', file.name, 'Size:', file.size)
-      const fileData = await file.arrayBuffer()
+
+      // Convert ArrayBuffer to Uint8Array for better localForage compatibility
+      const arrayBuffer = await file.arrayBuffer()
+      const uint8Array = new Uint8Array(arrayBuffer)
 
       const book = {
         id: Date.now().toString(),
         name: file.name.replace(/\.(pdf|epub)$/i, ''),
-        fileData,
+        fileData: uint8Array,
         uploadedAt: new Date().toISOString(),
         size: file.size,
         type
@@ -157,7 +160,14 @@ function App() {
       setBookSections([])
       setCurrentPage(1)
 
-      const fileData = book.fileData || (await book.file.arrayBuffer())
+      // Convert Uint8Array back to ArrayBuffer
+      let fileData
+      if (book.fileData instanceof Uint8Array) {
+        fileData = book.fileData.buffer.slice(book.fileData.byteOffset, book.fileData.byteOffset + book.fileData.byteLength)
+      } else {
+        fileData = book.fileData || (await book.file.arrayBuffer())
+      }
+
       let sections = []
 
       if (book.type === 'epub') {
@@ -372,6 +382,11 @@ function App() {
 
   const extractEpubBookSections = async (fileData) => {
     try {
+      // Check if epubjs is available
+      if (!ePub) {
+        throw new Error('EPUB library not loaded')
+      }
+
       const epubBook = ePub(fileData)
       await epubBook.ready
       const sections = []
@@ -397,7 +412,7 @@ function App() {
       return sections.filter(s => s.content && s.content.trim().length > 0)
     } catch (error) {
       console.error('Error extracting EPUB:', error)
-      return [{ type: 'paragraph', content: 'Unable to load EPUB content. Please check the file or try another EPUB.' }]
+      return [{ type: 'paragraph', content: 'EPUB support is not available on this device. Please try a PDF file instead.' }]
     }
   }
 
@@ -792,7 +807,7 @@ function App() {
                     e.stopPropagation()
                     deleteBook(book.id)
                   }}
-                  className="absolute top-4 right-4 p-2 bg-red-500/10 hover:bg-red-500/20 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-200 hover:scale-110"
+                  className="absolute top-4 right-4 p-2 bg-red-500/10 hover:bg-red-500/20 rounded-lg opacity-0 group-hover:opacity-100 md:opacity-100 md:group-hover:opacity-100 transition-all duration-200 hover:scale-110"
                 >
                   <Trash2 size={18} className="text-red-500" />
                 </button>
