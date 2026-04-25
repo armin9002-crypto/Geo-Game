@@ -103,14 +103,18 @@ function App() {
     try {
       console.log('Uploading file:', file.name, 'Size:', file.size)
 
-      // Convert ArrayBuffer to Uint8Array for better localForage compatibility
-      const arrayBuffer = await file.arrayBuffer()
-      const uint8Array = new Uint8Array(arrayBuffer)
+      // Convert file to base64 for better Safari compatibility
+      const base64Data = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result)
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
 
       const book = {
         id: Date.now().toString(),
         name: file.name.replace(/\.(pdf|epub)$/i, ''),
-        fileData: uint8Array,
+        fileData: base64Data,
         uploadedAt: new Date().toISOString(),
         size: file.size,
         type
@@ -160,9 +164,18 @@ function App() {
       setBookSections([])
       setCurrentPage(1)
 
-      // Convert Uint8Array back to ArrayBuffer
+      // Convert base64 back to ArrayBuffer
       let fileData
-      if (book.fileData instanceof Uint8Array) {
+      if (typeof book.fileData === 'string' && book.fileData.startsWith('data:')) {
+        // Handle base64 data URL
+        const base64 = book.fileData.split(',')[1]
+        const binaryString = atob(base64)
+        const bytes = new Uint8Array(binaryString.length)
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i)
+        }
+        fileData = bytes.buffer
+      } else if (book.fileData instanceof Uint8Array) {
         fileData = book.fileData.buffer.slice(book.fileData.byteOffset, book.fileData.byteOffset + book.fileData.byteLength)
       } else {
         fileData = book.fileData || (await book.file.arrayBuffer())
@@ -679,68 +692,67 @@ function App() {
   // Library View
   return (
     <div className={`min-h-screen ${getThemeClasses()} transition-all duration-500`}>
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="text-center mb-16">
-          <div className="inline-flex items-center gap-3 px-5 py-2.5 bg-white/70 dark:bg-slate-950/70 backdrop-blur-xl rounded-full border border-white/20 dark:border-slate-700/60 mb-8 shadow-xl shadow-slate-900/10">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg shadow-blue-500/20">
-              <Book size={18} className="text-white" />
+      <div className="max-w-7xl mx-auto px-6 py-12">
+        {/* Minimal Header */}
+        <div className="text-center mb-20">
+          <div className="inline-flex items-center gap-4 px-6 py-3 bg-white/60 dark:bg-slate-950/60 backdrop-blur-xl rounded-full border border-white/30 dark:border-slate-700/50 mb-8 shadow-lg">
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-sm">
+              <Book size={16} className="text-white" />
             </div>
-            <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest">Digital Library</span>
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wide">Library</span>
           </div>
-          <h1 className="text-5xl md:text-6xl font-bold mb-6 bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 dark:from-blue-400 dark:via-purple-400 dark:to-indigo-400 bg-clip-text text-transparent leading-tight">
-            Your Reading Journey
+
+          <h1 className="text-4xl md:text-5xl font-bold mb-4 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 dark:from-white dark:via-slate-100 dark:to-white bg-clip-text text-transparent leading-tight">
+            Your Digital Library
           </h1>
-          <p className="text-lg md:text-xl text-slate-700 dark:text-slate-300 max-w-2xl mx-auto leading-relaxed font-medium">
-            Discover, organize, and immerse yourself in beautiful, intelligent reading experiences
+          <p className="text-base md:text-lg text-slate-600 dark:text-slate-400 max-w-xl mx-auto leading-relaxed">
+            Curate your collection of books and discover new worlds through intelligent reading
           </p>
         </div>
 
         {/* Stats Bar */}
-        <div className="flex justify-center mb-12">
-          <div className="inline-flex gap-8 bg-white/70 dark:bg-slate-950/70 backdrop-blur-2xl rounded-[28px] px-8 py-6 border border-white/20 dark:border-slate-700/60 shadow-2xl shadow-slate-900/10">
-            <div className="text-center group">
-              <div className="text-5xl font-bold text-blue-600 dark:text-blue-400 mb-2 group-hover:scale-110 transition-transform duration-300">
+        <div className="flex justify-center mb-16">
+          <div className="inline-flex gap-6 bg-white/50 dark:bg-slate-950/50 backdrop-blur-xl rounded-2xl px-6 py-4 border border-white/20 dark:border-slate-700/40 shadow-sm">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-1">
                 {books.length}
               </div>
-              <div className="text-sm text-slate-700 dark:text-slate-400 font-semibold uppercase tracking-wider">Books</div>
-              <div className="w-12 h-1 bg-gradient-to-r from-blue-500 to-transparent rounded-full mx-auto mt-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+              <div className="text-xs text-slate-600 dark:text-slate-400 font-medium uppercase tracking-wide">Books</div>
             </div>
-            <div className="w-px bg-slate-400/30 dark:bg-slate-600/30"></div>
-            <div className="text-center group">
-              <div className="text-5xl font-bold text-green-600 dark:text-green-400 mb-2 group-hover:scale-110 transition-transform duration-300">
+            <div className="w-px bg-slate-300/50 dark:bg-slate-600/50"></div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-1">
                 {books.reduce((total, book) => total + (book.size || 0), 0) ? formatFileSize(books.reduce((total, book) => total + (book.size || 0), 0)) : '0 B'}
               </div>
-              <div className="text-sm text-slate-700 dark:text-slate-400 font-semibold uppercase tracking-wider">Storage</div>
-              <div className="w-12 h-1 bg-gradient-to-r from-green-500 to-transparent rounded-full mx-auto mt-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+              <div className="text-xs text-slate-600 dark:text-slate-400 font-medium uppercase tracking-wide">Storage</div>
             </div>
           </div>
         </div>
 
         {/* Action Bar */}
-        <div className="flex justify-center items-center gap-6 mb-16 flex-wrap">
+        <div className="flex justify-center items-center gap-4 mb-20 flex-wrap">
           {/* Theme Toggle */}
-          <div className="flex items-center gap-1.5 bg-white/75 dark:bg-slate-950/75 backdrop-blur-2xl rounded-full p-1.5 border border-white/20 dark:border-slate-700/60 shadow-lg shadow-slate-900/10">
+          <div className="flex items-center gap-1 bg-white/60 dark:bg-slate-950/60 backdrop-blur-xl rounded-2xl p-1 border border-white/20 dark:border-slate-700/40 shadow-sm">
             <button
               onClick={() => changeTheme('light')}
-              className={`p-3 rounded-2xl transition-all duration-300 ${theme === 'light' ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-lg scale-110' : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/20 dark:hover:bg-slate-700/30'}`}
+              className={`p-2.5 rounded-xl transition-all duration-200 ${theme === 'light' ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-sm scale-105' : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
               title="Light Theme"
             >
-              <Sun size={20} />
+              <Sun size={18} />
             </button>
             <button
               onClick={() => changeTheme('sepia')}
-              className={`p-3 rounded-lg transition-all duration-300 ${theme === 'sepia' ? 'bg-amber-500 text-white shadow-lg scale-110' : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/20 dark:hover:bg-slate-700/30'}`}
+              className={`p-2.5 rounded-xl transition-all duration-200 ${theme === 'sepia' ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 shadow-sm scale-105' : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
               title="Sepia Theme"
             >
-              <Palette size={20} />
+              <Palette size={18} />
             </button>
             <button
               onClick={() => changeTheme('dark')}
-              className={`p-3 rounded-lg transition-all duration-300 ${theme === 'dark' ? 'bg-slate-700 text-white shadow-lg scale-110' : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/20 dark:hover:bg-slate-700/30'}`}
+              className={`p-2.5 rounded-xl transition-all duration-200 ${theme === 'dark' ? 'bg-slate-700 text-white shadow-sm scale-105' : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
               title="Dark Theme"
             >
-              <Moon size={20} />
+              <Moon size={18} />
             </button>
           </div>
 
@@ -748,16 +760,16 @@ function App() {
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isLoading}
-            className="flex items-center gap-2.5 px-6 py-3 bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 hover:from-blue-700 hover:via-purple-700 hover:to-indigo-700 text-white rounded-full shadow-lg hover:shadow-2xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 font-semibold text-sm md:text-base"
+            className="flex items-center gap-3 px-6 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 font-medium text-sm"
           >
             {isLoading ? (
               <>
-                <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/20 border-t-white"></div>
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/20 dark:border-slate-900/20 border-t-white dark:border-t-slate-900"></div>
                 <span>Uploading...</span>
               </>
             ) : (
               <>
-                <Plus size={20} />
+                <Plus size={18} />
                 <span>Add Book</span>
               </>
             )}
@@ -773,25 +785,20 @@ function App() {
 
         {/* Books Grid */}
         {books.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="relative mb-8">
-              <div className="w-32 h-32 bg-gradient-to-br from-blue-500 via-purple-600 to-indigo-600 rounded-3xl flex items-center justify-center mx-auto shadow-2xl hover:scale-110 transition-transform duration-300">
-                <Book size={64} className="text-white" />
-              </div>
-              <div className="absolute -top-4 -right-4 w-10 h-10 bg-yellow-400 rounded-full flex items-center justify-center animate-bounce shadow-lg">
-                <Plus size={20} className="text-yellow-900 font-bold" />
-              </div>
+          <div className="text-center py-24">
+            <div className="w-24 h-24 bg-slate-100 dark:bg-slate-800 rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-sm">
+              <Book size={48} className="text-slate-400 dark:text-slate-500" />
             </div>
-            <h2 className="text-5xl font-bold mb-4 text-slate-900 dark:text-white">Start Reading</h2>
-            <p className="text-lg text-slate-600 dark:text-slate-300 mb-10 max-w-lg mx-auto leading-relaxed font-medium">
-              Upload your first PDF or EPUB to experience beautiful, intelligent reading with smart paragraph detection and modern design.
+            <h2 className="text-3xl font-bold mb-4 text-slate-900 dark:text-white">No books yet</h2>
+            <p className="text-slate-600 dark:text-slate-400 mb-8 max-w-md mx-auto leading-relaxed">
+              Upload your first PDF or EPUB to start your reading journey
             </p>
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 hover:from-blue-700 hover:via-purple-700 hover:to-indigo-700 text-white rounded-full shadow-xl hover:shadow-2xl transition-all duration-300 text-lg font-bold hover:scale-105"
+              className="inline-flex items-center gap-3 px-6 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 hover:scale-105 font-medium text-sm"
             >
-              <Upload size={24} />
-              Upload Your First Book
+              <Upload size={18} />
+              Upload Book
             </button>
           </div>
         ) : (
@@ -799,7 +806,7 @@ function App() {
             {books.map((book) => (
               <div
                 key={book.id}
-                className="group relative bg-white/85 dark:bg-slate-950/75 backdrop-blur-2xl rounded-[28px] p-6 cursor-pointer hover:bg-white dark:hover:bg-slate-900 border border-white/20 dark:border-slate-700/60 hover:border-blue-300 dark:hover:border-blue-500/40 shadow-2xl shadow-slate-900/10 transition-all duration-300 hover:scale-[1.03] overflow-hidden"
+                className="group relative bg-white/70 dark:bg-slate-950/70 backdrop-blur-xl rounded-2xl p-6 cursor-pointer hover:bg-white dark:hover:bg-slate-900 border border-white/20 dark:border-slate-700/50 hover:border-slate-300 dark:hover:border-slate-600 shadow-sm hover:shadow-md transition-all duration-200 hover:scale-[1.02] overflow-hidden"
               >
                 {/* Delete Button */}
                 <button
@@ -807,29 +814,30 @@ function App() {
                     e.stopPropagation()
                     deleteBook(book.id)
                   }}
-                  className="absolute top-4 right-4 p-2 bg-red-500/10 hover:bg-red-500/20 rounded-lg opacity-0 group-hover:opacity-100 md:opacity-100 md:group-hover:opacity-100 transition-all duration-200 hover:scale-110"
+                  className="absolute top-3 right-3 p-2 bg-red-500 hover:bg-red-600 text-white rounded-xl shadow-sm border border-red-400/30 opacity-0 group-hover:opacity-100 transition-all duration-200 hover:scale-110 active:scale-95"
+                  title="Delete book"
                 >
-                  <Trash2 size={18} className="text-red-500" />
+                  <Trash2 size={14} className="text-white drop-shadow-sm" />
                 </button>
 
                 {/* Book Icon */}
-                <div className="flex items-center justify-center mb-6">
-                  <div className="p-6 bg-gradient-to-br from-blue-500 via-purple-600 to-indigo-600 rounded-2xl shadow-lg group-hover:shadow-xl transition-all duration-300 group-hover:scale-110">
-                    <FileText size={40} className="text-white" />
+                <div className="flex items-center justify-center mb-5">
+                  <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-2xl shadow-sm group-hover:shadow-md transition-all duration-200 group-hover:scale-110">
+                    <FileText size={32} className="text-slate-600 dark:text-slate-400" />
                   </div>
                 </div>
 
                 {/* Book Info */}
-                <h3 className="font-bold text-lg mb-3 text-slate-900 dark:text-white text-center leading-tight line-clamp-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors duration-200">
+                <h3 className="font-semibold text-base mb-3 text-slate-900 dark:text-white text-center leading-tight line-clamp-2 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors duration-200">
                   {book.name}
                 </h3>
                 <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400 text-center">
                   <div className="flex items-center justify-center gap-2">
-                    <Clock size={14} />
+                    <Clock size={12} />
                     <span>{new Date(book.uploadedAt).toLocaleDateString()}</span>
                   </div>
                   {book.size && (
-                    <div className="font-semibold text-slate-700 dark:text-slate-300">
+                    <div className="font-medium text-slate-700 dark:text-slate-300">
                       {formatFileSize(book.size)}
                     </div>
                   )}
@@ -838,13 +846,11 @@ function App() {
                 {/* Read Button */}
                 <button
                   onClick={() => openBook(book)}
-                  className="w-full mt-6 px-4 py-2.5 bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white rounded-lg shadow-md hover:shadow-lg transition-all duration-200 font-bold text-sm hover:scale-105 active:scale-95"
+                  className="w-full mt-6 px-4 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl shadow-sm hover:shadow-md transition-all duration-200 font-medium text-sm hover:scale-105 active:scale-95"
                 >
                   Read Now
                 </button>
 
-                {/* Hover Effect */}
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-purple-500/5 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
               </div>
             ))}
           </div>
