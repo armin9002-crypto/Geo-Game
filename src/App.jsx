@@ -8,6 +8,33 @@ import ePub from 'epubjs'
 // Configure PDF.js worker with a bundled asset URL
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
+const AppLogo = () => (
+  <div className="mx-auto flex flex-col items-center gap-4">
+    <div className="relative w-20 h-20 rounded-3xl bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-500 shadow-2xl shadow-blue-500/25 flex items-center justify-center border border-white/20">
+      <svg viewBox="0 0 72 72" className="w-12 h-12 text-white">
+        <defs>
+          <linearGradient id="logoGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.9" />
+            <stop offset="100%" stopColor="#d8d8ff" stopOpacity="0.2" />
+          </linearGradient>
+        </defs>
+        <path d="M20 24C20 24 30 18 36 18C42 18 52 24 52 24V48C52 48 42 42 36 42C30 42 20 48 20 48V24Z" fill="url(#logoGlow)" opacity="0.25" />
+        <path d="M20 26C20 26 30 20 36 20C42 20 52 26 52 26V46C52 46 42 40 36 40C30 40 20 46 20 46V26Z" fill="currentColor" opacity="0.18" />
+        <path d="M21 24L31 20L36 20L45 24" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M21 30L31 26L36 26L45 30" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M21 36L31 32L36 32L45 36" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M24 18L24 12" stroke="white" strokeWidth="2" strokeLinecap="round" />
+        <path d="M32 16L32 10" stroke="white" strokeWidth="2" strokeLinecap="round" />
+        <path d="M40 18L40 12" stroke="white" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    </div>
+    <div className="text-center">
+      <div className="text-base font-semibold uppercase tracking-[0.35em] text-slate-700 dark:text-slate-300">Vibe Reader</div>
+      <div className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-[0.35em]">Journal-style reading</div>
+    </div>
+  </div>
+)
+
 function App() {
   const [books, setBooks] = useState([])
   const [currentBook, setCurrentBook] = useState(null)
@@ -21,8 +48,12 @@ function App() {
   const [isLoading, setIsLoading] = useState(false)
   const [pdfDocument, setPdfDocument] = useState(null)
   const [isRendering, setIsRendering] = useState(false)
+  const [showChrome, setShowChrome] = useState(true)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [lastInteraction, setLastInteraction] = useState(Date.now())
   const canvasRef = useRef(null)
   const fileInputRef = useRef(null)
+  const chromeTimeoutRef = useRef(null)
 
   // Load books and settings on mount
   useEffect(() => {
@@ -36,6 +67,35 @@ function App() {
       saveProgress(currentBook.id, currentPage)
     }
   }, [currentPage, currentBook])
+
+  // Chrome auto-hide handler for reader view
+  useEffect(() => {
+    if (view !== 'reader') return
+
+    const handleInteraction = () => {
+      setShowChrome(true)
+      setLastInteraction(Date.now())
+
+      if (chromeTimeoutRef.current) {
+        clearTimeout(chromeTimeoutRef.current)
+      }
+
+      chromeTimeoutRef.current = setTimeout(() => {
+        setShowChrome(false)
+      }, 3000)
+    }
+
+    document.addEventListener('click', handleInteraction)
+    document.addEventListener('touchstart', handleInteraction)
+
+    return () => {
+      document.removeEventListener('click', handleInteraction)
+      document.removeEventListener('touchstart', handleInteraction)
+      if (chromeTimeoutRef.current) {
+        clearTimeout(chromeTimeoutRef.current)
+      }
+    }
+  }, [view])
 
   // Rebuild app pages whenever text structure or font size changes
   useEffect(() => {
@@ -250,6 +310,8 @@ function App() {
     setCurrentPage(1)
     setNumPages(null)
     setView('library')
+    setSettingsOpen(false)
+    setShowChrome(true)
   }
 
   const changeTheme = async (newTheme) => {
@@ -507,229 +569,213 @@ function App() {
 
   if (view === 'reader' && currentBook) {
     return (
-      <div className={`min-h-screen ${getThemeClasses()} transition-all duration-500`}>
-        {/* Reader Header */}
-        <div className="sticky top-0 z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl border-b border-white/20 dark:border-slate-700/30 px-6 py-4 shadow-sm">
+      <div className={`min-h-screen ${getThemeClasses()} transition-all duration-500 flex flex-col`} onClick={() => setShowChrome(!showChrome)}>
+        {/* Minimal Top Bar with Auto-Hide */}
+        <div className={`sticky top-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl border-b border-white/20 dark:border-slate-700/30 px-6 py-4 shadow-sm transition-all duration-300 ${showChrome ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
           <div className="flex items-center justify-between max-w-7xl mx-auto">
             <button
-              onClick={closeBook}
+              onClick={(e) => {
+                e.stopPropagation()
+                closeBook()
+              }}
               className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-100/60 dark:bg-slate-800/60 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 backdrop-blur-sm transition-all duration-200 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 font-medium shadow-sm hover:shadow-md"
             >
               <ChevronLeft size={18} />
-              Library
+              <span className="hidden sm:inline">Library</span>
             </button>
 
-            <div className="flex items-center gap-3">
-              {/* Theme Toggle */}
-              <div className="flex items-center gap-1 bg-slate-100/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-full p-1 shadow-sm border border-slate-200/50 dark:border-slate-700/50">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white truncate px-4 flex-1 text-center">
+              {currentBook.name.length > 30 ? currentBook.name.substring(0, 27) + '...' : currentBook.name}
+            </h2>
+
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setSettingsOpen(!settingsOpen)
+              }}
+              className="p-2.5 rounded-full bg-slate-100/60 dark:bg-slate-800/60 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 backdrop-blur-sm transition-all duration-200 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 shadow-sm hover:shadow-md"
+            >
+              <Settings size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Settings Panel Overlay */}
+        {settingsOpen && (
+          <div 
+            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+            onClick={() => setSettingsOpen(false)}
+          />
+        )}
+        
+        {/* Settings Slide-in Panel */}
+        <div className={`fixed right-0 top-0 z-50 h-full w-72 bg-white dark:bg-slate-950 shadow-2xl transform transition-transform duration-300 ease-out ${settingsOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+          <div className="p-6 flex flex-col gap-8 h-full">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Settings</h3>
+              <button
+                onClick={() => setSettingsOpen(false)}
+                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all"
+              >
+                <X size={20} className="text-slate-600 dark:text-slate-400" />
+              </button>
+            </div>
+
+            {/* Theme Selector */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 uppercase tracking-wide">Theme</label>
+              <div className="flex flex-col gap-2">
                 <button
-                  onClick={() => changeTheme('light')}
-                  className={`p-2 rounded-full transition-all duration-200 ${theme === 'light' ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-md' : 'text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                  aria-pressed={theme === 'light'}
+                  onClick={() => {
+                    changeTheme('light')
+                    setShowChrome(true)
+                  }}
+                  className={`p-3 rounded-xl text-left transition-all ${theme === 'light' ? 'bg-blue-500 text-white shadow-lg' : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white hover:bg-slate-200 dark:hover:bg-slate-700'}`}
                 >
-                  <Sun size={16} />
+                  <Sun size={18} className="inline mr-2" />
+                  Light
                 </button>
                 <button
-                  onClick={() => changeTheme('sepia')}
-                  className={`p-2 rounded-full transition-all duration-200 ${theme === 'sepia' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                  aria-pressed={theme === 'sepia'}
+                  onClick={() => {
+                    changeTheme('sepia')
+                    setShowChrome(true)
+                  }}
+                  className={`p-3 rounded-xl text-left transition-all ${theme === 'sepia' ? 'bg-amber-500 text-white shadow-lg' : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white hover:bg-slate-200 dark:hover:bg-slate-700'}`}
                 >
-                  <Palette size={16} />
+                  <Palette size={18} className="inline mr-2" />
+                  Sepia
                 </button>
                 <button
-                  onClick={() => changeTheme('dark')}
-                  className={`p-2 rounded-full transition-all duration-200 ${theme === 'dark' ? 'bg-slate-700 text-white shadow-md' : 'text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                  aria-pressed={theme === 'dark'}
+                  onClick={() => {
+                    changeTheme('dark')
+                    setShowChrome(true)
+                  }}
+                  className={`p-3 rounded-xl text-left transition-all ${theme === 'dark' ? 'bg-slate-700 text-white shadow-lg' : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white hover:bg-slate-200 dark:hover:bg-slate-700'}`}
                 >
-                  <Moon size={16} />
+                  <Moon size={18} className="inline mr-2" />
+                  Dark
                 </button>
               </div>
+            </div>
 
-              <div className="flex items-center gap-3">
-                <div className="text-sm font-semibold text-slate-700 dark:text-slate-300 bg-slate-100/60 dark:bg-slate-800/60 px-3 py-2 rounded-full backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50">
-                  Theme: {theme === 'light' ? 'Light' : theme === 'sepia' ? 'Sepia' : 'Dark'}
+            {/* Font Size Control */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 uppercase tracking-wide">Text Size</label>
+              <div className="flex items-center gap-3 bg-slate-100 dark:bg-slate-800 rounded-2xl p-2">
+                <button
+                  onClick={() => saveFontSize(Math.max(14, fontSize - 2))}
+                  className="flex-1 p-3 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all font-bold"
+                >
+                  A−
+                </button>
+                <div className="flex-1 text-center font-bold text-slate-900 dark:text-white text-lg">
+                  {fontSize}
                 </div>
-                <div className="text-sm font-semibold text-slate-700 dark:text-slate-300 bg-slate-100/60 dark:bg-slate-800/60 px-3 py-2 rounded-full backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50">
-                  {currentPage} / {numPages || '?'}
-                </div>
+                <button
+                  onClick={() => saveFontSize(Math.min(32, fontSize + 2))}
+                  className="flex-1 p-3 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all font-bold"
+                >
+                  A+
+                </button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Reader Content */}
-        <div className="flex-1 flex justify-center px-4 py-6">
-          <div className="max-w-3xl w-full">
-            {isRendering ? (
-              <div className="flex items-center justify-center py-20">
-                <div className="relative">
-                  <div className="animate-spin rounded-full h-16 w-16 border-4 border-slate-200 dark:border-slate-700 border-t-blue-500 dark:border-t-blue-400"></div>
-                </div>
-                <span className="ml-4 text-slate-700 dark:text-slate-300 text-lg font-medium">Loading page...</span>
+        {/* Reader Content - Main */}
+        <div className="flex-1 flex justify-center px-6 py-8 overflow-hidden">
+          {isRendering ? (
+            <div className="flex items-center justify-center">
+              <div className="relative">
+                <div className="animate-spin rounded-full h-16 w-16 border-4 border-slate-200 dark:border-slate-700 border-t-blue-500 dark:border-t-blue-400"></div>
               </div>
-            ) : (
-              <div className="bg-white/95 dark:bg-slate-950/95 rounded-[28px] shadow-2xl dark:shadow-[0_35px_90px_-50px_rgba(15,23,42,0.9)] border border-slate-200/40 dark:border-slate-700/60 overflow-hidden transition-all duration-300">
-                {/* Reader Info Section */}
-                <div className="px-8 py-6 border-b border-slate-100/50 dark:border-slate-800/60 bg-gradient-to-r from-slate-50 to-blue-50/30 dark:from-slate-900/40 dark:to-slate-950/30">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div className="space-y-2">
-                      <div className="text-xs uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400 font-bold">Currently Reading</div>
-                      <h1 className="text-3xl font-bold text-slate-900 dark:text-white leading-tight">{currentBook.name}</h1>
-                      <div className="flex items-center gap-4 text-sm text-slate-600 dark:text-slate-400 flex-wrap">
-                        <span className="flex items-center gap-1.5 bg-white/50 dark:bg-slate-800/50 px-3 py-1.5 rounded-full">
-                          <FileText size={14} className="text-blue-500" />
-                          Page {currentPage} of {numPages}
-                        </span>
-                        <span className="w-1.5 h-1.5 bg-slate-400 dark:bg-slate-500 rounded-full"></span>
-                        <span>{formatFileSize(currentBook.size)}</span>
-                      </div>
-                    </div>
-
-                    {/* Font Controls */}
-                    <div className="flex items-center gap-2 bg-white dark:bg-slate-800 rounded-2xl p-2 border border-slate-200/50 dark:border-slate-700/50 shadow-sm">
-                      <button
-                        onClick={() => saveFontSize(Math.max(14, fontSize - 2))}
-                        className="p-3 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all duration-200 font-bold text-sm leading-none active:scale-95"
-                        title="Decrease font size"
-                      >
-                        A−
-                      </button>
-                      <div className="px-4 py-2 text-sm font-bold text-slate-900 dark:text-slate-100 min-w-[3.5rem] text-center">
-                        {fontSize}
-                      </div>
-                      <button
-                        onClick={() => saveFontSize(Math.min(32, fontSize + 2))}
-                        className="p-3 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all duration-200 font-bold text-sm leading-none active:scale-95"
-                        title="Increase font size"
-                      >
-                        A+
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Text Content */}
-                <div className="px-8 py-8 max-h-[70vh] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600 scrollbar-track-transparent">
-                  <div
-                    className="text-slate-900 dark:text-slate-100 leading-relaxed selection:bg-blue-200 dark:selection:bg-blue-800 selection:text-blue-900 dark:selection:text-blue-100"
-                    style={{
-                      fontSize: `${fontSize}px`,
-                      lineHeight: `${fontSize * 1.6}px`,
-                      hyphens: 'auto',
-                      wordBreak: 'break-word'
-                    }}
-                  >
-                    {bookPages[currentPage - 1] && bookPages[currentPage - 1].length > 0 ? (
-                      <div className="space-y-6">
-                        {bookPages[currentPage - 1].map((section, index) => {
-                          if (section.type === 'header') {
-                            return (
-                              <div key={index} className={`mt-8 mb-6 ${index === 0 ? 'mt-0' : ''}`}>
-                                <h2 className={`font-bold text-slate-900 dark:text-white leading-tight ${section.level === 'h1' ? 'text-2xl' : 'text-xl'}`}>
-                                  {section.content}
-                                </h2>
-                                <div className="w-12 h-1 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full mt-3"></div>
-                              </div>
-                            )
-                          }
-
-                          return (
-                            <p key={index} className="text-justify indent-8 first:indent-0">
-                              {section.content}
-                            </p>
-                          )
-                        })}
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center py-16 text-center">
-                        <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
-                          <FileText size={24} className="text-slate-400 dark:text-slate-500" />
-                        </div>
-                        <h3 className="text-lg font-medium text-slate-600 dark:text-slate-400 mb-2">No readable text found</h3>
-                        <p className="text-sm text-slate-500 dark:text-slate-500 max-w-md">
-                          This section may contain images, scanned content, or non-selectable text. Adjust the font size or try another document.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Reading Progress Bar */}
-                <div className="px-8 py-4 bg-slate-100/80 dark:bg-slate-950/70 border-t border-slate-200/50 dark:border-slate-800/60 backdrop-blur-xl">
-                  <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 mb-3 font-semibold uppercase tracking-[0.24em]">
-                    <span>Progress</span>
-                    <span>{Math.round((currentPage / numPages) * 100)}%</span>
-                  </div>
-                  <div className="w-full bg-slate-200/80 dark:bg-slate-800 rounded-full h-2.5 overflow-hidden shadow-inner">
-                    <div
-                      className="bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-500 h-2.5 rounded-full transition-all duration-300 shadow-lg"
-                      style={{ width: `${(currentPage / numPages) * 100}%` }}
-                    ></div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Navigation Footer */}
-        <div className="sticky bottom-0 z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl border-t border-slate-200/50 dark:border-slate-700/30 px-6 py-4 shadow-lg">
-          <div className="flex items-center justify-center gap-4 max-w-7xl mx-auto flex-wrap">
-            <button
-              onClick={goToPrevPage}
-              disabled={currentPage <= 1}
-              className="group flex items-center gap-2 px-5 py-2.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-medium text-sm shadow-sm hover:shadow-md disabled:hover:shadow-sm"
-            >
-              <ChevronLeft size={18} className="group-hover:-translate-x-0.5 transition-transform duration-200" />
-              <span>Previous</span>
-            </button>
-
-            <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800/70 rounded-full px-4 py-2.5 border border-slate-200/50 dark:border-slate-700/50 shadow-sm">
-              <button
-                onClick={() => setCurrentPage(Math.max(1, currentPage - 10))}
-                disabled={currentPage <= 10}
-                className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-all duration-200 disabled:opacity-40"
-                title="Previous 10 pages"
-              >
-                <ChevronLeft size={16} />
-                <ChevronLeft size={16} className="-ml-2" />
-              </button>
-
-              <input
-                type="number"
-                min="1"
-                max={numPages}
-                value={currentPage}
-                onChange={(e) => {
-                  const page = parseInt(e.target.value)
-                  if (page >= 1 && page <= numPages) {
-                    setCurrentPage(page)
-                  }
+              <span className="ml-4 text-slate-700 dark:text-slate-300 text-lg font-medium">Loading page...</span>
+            </div>
+          ) : (
+            <div className="w-full max-w-[680px] overflow-y-auto">
+              <div
+                className="text-slate-900 dark:text-slate-100 leading-relaxed selection:bg-blue-200 dark:selection:bg-blue-800 selection:text-blue-900 dark:selection:text-blue-100"
+                style={{
+                  fontSize: `${fontSize}px`,
+                  lineHeight: `${fontSize * 1.65}px`,
+                  hyphens: 'auto',
+                  wordBreak: 'break-word',
+                  textAlign: 'left'
                 }}
-                className="w-16 bg-white dark:bg-slate-900 text-center font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg px-2 py-1 text-sm"
-              />
-              <span className="text-slate-600 dark:text-slate-400 font-semibold text-sm">/ {numPages}</span>
-
-              <button
-                onClick={() => setCurrentPage(Math.min(numPages, currentPage + 10))}
-                disabled={currentPage >= numPages - 10}
-                className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-all duration-200 disabled:opacity-40"
-                title="Next 10 pages"
               >
-                <ChevronRight size={16} />
-                <ChevronRight size={16} className="-ml-2" />
-              </button>
+                {bookPages[currentPage - 1] && bookPages[currentPage - 1].length > 0 ? (
+                  <div className="space-y-6">
+                    {bookPages[currentPage - 1].map((section, index) => {
+                      if (section.type === 'header') {
+                        return (
+                          <div key={index} className={`mt-8 mb-6 ${index === 0 ? 'mt-0' : ''}`}>
+                            <h2 className={`font-bold text-slate-900 dark:text-white leading-tight ${section.level === 'h1' ? 'text-2xl' : 'text-xl'}`}>
+                              {section.content}
+                            </h2>
+                            <div className="w-12 h-1 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full mt-3"></div>
+                          </div>
+                        )
+                      }
+                      return (
+                        <p key={index} className="first:mt-0">
+                          {section.content}
+                        </p>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                      <FileText size={24} className="text-slate-400 dark:text-slate-500" />
+                    </div>
+                    <h3 className="text-lg font-medium text-slate-600 dark:text-slate-400 mb-2">No readable text found</h3>
+                    <p className="text-sm text-slate-500 dark:text-slate-500 max-w-md">
+                      This page may contain images or non-selectable content.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Minimal Bottom Navigation with Auto-Hide */}
+        <div className={`sticky bottom-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl border-t border-white/20 dark:border-slate-700/30 px-6 py-3 shadow-sm transition-all duration-300 ${showChrome ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+          <div className="flex items-center justify-center gap-6 max-w-7xl mx-auto">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                goToPrevPage()
+              }}
+              disabled={currentPage <= 1}
+              className="p-2.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all text-slate-700 dark:text-slate-300"
+            >
+              <ChevronLeft size={20} />
+            </button>
+
+            <div className="text-sm font-semibold text-slate-700 dark:text-slate-300 bg-slate-100/60 dark:bg-slate-800/60 px-4 py-2 rounded-lg backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50">
+              {currentPage} / {numPages || '?'}
             </div>
 
             <button
-              onClick={goToNextPage}
+              onClick={(e) => {
+                e.stopPropagation()
+                goToNextPage()
+              }}
               disabled={currentPage >= numPages}
-              className="group flex items-center gap-2 px-5 py-2.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-medium text-sm shadow-sm hover:shadow-md disabled:hover:shadow-sm"
+              className="p-2.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all text-slate-700 dark:text-slate-300"
             >
-              <span>Next</span>
-              <ChevronRight size={18} className="group-hover:translate-x-0.5 transition-transform duration-200" />
+              <ChevronRight size={20} />
             </button>
           </div>
+        </div>
+
+        {/* Slim Progress Bar at Bottom */}
+        <div className="h-0.5 bg-slate-200/60 dark:bg-slate-800/60">
+          <div
+            className="h-0.5 bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-500 transition-all duration-300"
+            style={{ width: `${(currentPage / numPages) * 100}%` }}
+          ></div>
         </div>
       </div>
     )
@@ -741,6 +787,7 @@ function App() {
       <div className="max-w-7xl mx-auto px-8 py-16">
         {/* Modern Header */}
         <div className="text-center mb-24">
+          <AppLogo />
           <div className="inline-flex items-center gap-4 px-8 py-4 bg-white/70 dark:bg-slate-950/70 backdrop-blur-2xl rounded-2xl border border-white/30 dark:border-slate-700/50 mb-10 shadow-xl">
             <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
               <Book size={20} className="text-white" />
