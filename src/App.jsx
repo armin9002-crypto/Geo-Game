@@ -8,33 +8,6 @@ import ePub from 'epubjs'
 // Configure PDF.js worker with a bundled asset URL
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
-const AppLogo = () => (
-  <div className="mx-auto flex flex-col items-center gap-4">
-    <div className="relative w-20 h-20 rounded-3xl bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-500 shadow-2xl shadow-blue-500/25 flex items-center justify-center border border-white/20">
-      <svg viewBox="0 0 72 72" className="w-12 h-12 text-white">
-        <defs>
-          <linearGradient id="logoGlow" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="#d8d8ff" stopOpacity="0.2" />
-          </linearGradient>
-        </defs>
-        <path d="M20 24C20 24 30 18 36 18C42 18 52 24 52 24V48C52 48 42 42 36 42C30 42 20 48 20 48V24Z" fill="url(#logoGlow)" opacity="0.25" />
-        <path d="M20 26C20 26 30 20 36 20C42 20 52 26 52 26V46C52 46 42 40 36 40C30 40 20 46 20 46V26Z" fill="currentColor" opacity="0.18" />
-        <path d="M21 24L31 20L36 20L45 24" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M21 30L31 26L36 26L45 30" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M21 36L31 32L36 32L45 36" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M24 18L24 12" stroke="white" strokeWidth="2" strokeLinecap="round" />
-        <path d="M32 16L32 10" stroke="white" strokeWidth="2" strokeLinecap="round" />
-        <path d="M40 18L40 12" stroke="white" strokeWidth="2" strokeLinecap="round" />
-      </svg>
-    </div>
-    <div className="text-center">
-      <div className="text-base font-semibold uppercase tracking-[0.35em] text-slate-700 dark:text-slate-300">Vibe Reader</div>
-      <div className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-[0.35em]">Journal-style reading</div>
-    </div>
-  </div>
-)
-
 function App() {
   const [books, setBooks] = useState([])
   const [currentBook, setCurrentBook] = useState(null)
@@ -68,6 +41,16 @@ function App() {
     }
   }, [currentPage, currentBook])
 
+  // Rebuild app pages whenever text structure or font size changes
+  useEffect(() => {
+    if (!currentBook || !bookSections.length) return
+
+    const pages = paginateSections(bookSections, fontSize)
+    setBookPages(pages)
+    setNumPages(pages.length)
+    setCurrentPage(prev => Math.min(prev, pages.length || 1))
+  }, [bookSections, fontSize, currentBook])
+
   // Chrome auto-hide handler for reader view
   useEffect(() => {
     if (view !== 'reader') return
@@ -97,15 +80,27 @@ function App() {
     }
   }, [view])
 
-  // Rebuild app pages whenever text structure or font size changes
+  // Keyboard shortcuts handler for reader view
   useEffect(() => {
-    if (!currentBook || !bookSections.length) return
+    if (view !== 'reader') return
 
-    const pages = paginateSections(bookSections, fontSize)
-    setBookPages(pages)
-    setNumPages(pages.length)
-    setCurrentPage(prev => Math.min(prev, pages.length || 1))
-  }, [bookSections, fontSize, currentBook])
+    const handleKeyPress = (e) => {
+      if (e.key === 'Escape') {
+        setSettingsOpen(false)
+      } else if (e.key === ' ' || e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault()
+        goToNextPage()
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        goToPrevPage()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyPress)
+    return () => {
+      document.removeEventListener('keydown', handleKeyPress)
+    }
+  }, [view, currentPage, numPages])
 
   const loadBooks = async () => {
     try {
@@ -146,6 +141,26 @@ function App() {
       console.error('Error loading progress:', error)
       return 1
     }
+  }
+
+  // Generate a stable color from book title hash
+  const generateColorFromTitle = (title) => {
+    const colors = [
+      'from-blue-500 to-cyan-500',
+      'from-purple-500 to-pink-500',
+      'from-green-500 to-emerald-500',
+      'from-orange-500 to-red-500',
+      'from-indigo-500 to-blue-500',
+      'from-rose-500 to-pink-500',
+      'from-amber-500 to-orange-500',
+      'from-teal-500 to-cyan-500'
+    ]
+    let hash = 0
+    for (let i = 0; i < title.length; i++) {
+      hash = ((hash << 5) - hash) + title.charCodeAt(i)
+      hash = hash & hash
+    }
+    return colors[Math.abs(hash) % colors.length]
   }
 
   const decodeBookData = (fileData) => {
@@ -310,8 +325,8 @@ function App() {
     setCurrentPage(1)
     setNumPages(null)
     setView('library')
-    setSettingsOpen(false)
     setShowChrome(true)
+    setSettingsOpen(false)
   }
 
   const changeTheme = async (newTheme) => {
@@ -602,12 +617,12 @@ function App() {
 
         {/* Settings Panel Overlay */}
         {settingsOpen && (
-          <div 
+          <div
             className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
             onClick={() => setSettingsOpen(false)}
           />
         )}
-        
+
         {/* Settings Slide-in Panel */}
         <div className={`fixed right-0 top-0 z-50 h-full w-72 bg-white dark:bg-slate-950 shadow-2xl transform transition-transform duration-300 ease-out ${settingsOpen ? 'translate-x-0' : 'translate-x-full'}`}>
           <div className="p-6 flex flex-col gap-8 h-full">
@@ -780,98 +795,116 @@ function App() {
       </div>
     )
   }
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Reading Progress Bar */}
+                <div className="px-8 py-4 bg-slate-100/80 dark:bg-slate-950/70 border-t border-slate-200/50 dark:border-slate-800/60 backdrop-blur-xl">
+                  <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 mb-3 font-semibold uppercase tracking-[0.24em]">
+                    <span>Progress</span>
+                    <span>{Math.round((currentPage / numPages) * 100)}%</span>
+                  </div>
+                  <div className="w-full bg-slate-200/80 dark:bg-slate-800 rounded-full h-2.5 overflow-hidden shadow-inner">
+                    <div
+                      className="bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-500 h-2.5 rounded-full transition-all duration-300 shadow-lg"
+                      style={{ width: `${(currentPage / numPages) * 100}%` }}
+                    ></div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Navigation Footer */}
+        <div className="sticky bottom-0 z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl border-t border-slate-200/50 dark:border-slate-700/30 px-6 py-4 shadow-lg">
+          <div className="flex items-center justify-center gap-4 max-w-7xl mx-auto flex-wrap">
+            <button
+              onClick={goToPrevPage}
+              disabled={currentPage <= 1}
+              className="group flex items-center gap-2 px-5 py-2.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-medium text-sm shadow-sm hover:shadow-md disabled:hover:shadow-sm"
+            >
+              <ChevronLeft size={18} className="group-hover:-translate-x-0.5 transition-transform duration-200" />
+              <span>Previous</span>
+            </button>
+
+            <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800/70 rounded-full px-4 py-2.5 border border-slate-200/50 dark:border-slate-700/50 shadow-sm">
+              <button
+                onClick={() => setCurrentPage(Math.max(1, currentPage - 10))}
+                disabled={currentPage <= 10}
+                className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-all duration-200 disabled:opacity-40"
+                title="Previous 10 pages"
+              >
+                <ChevronLeft size={16} />
+                <ChevronLeft size={16} className="-ml-2" />
+              </button>
+
+              <input
+                type="number"
+                min="1"
+                max={numPages}
+                value={currentPage}
+                onChange={(e) => {
+                  const page = parseInt(e.target.value)
+                  if (page >= 1 && page <= numPages) {
+                    setCurrentPage(page)
+                  }
+                }}
+                className="w-16 bg-white dark:bg-slate-900 text-center font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg px-2 py-1 text-sm"
+              />
+              <span className="text-slate-600 dark:text-slate-400 font-semibold text-sm">/ {numPages}</span>
+
+              <button
+                onClick={() => setCurrentPage(Math.min(numPages, currentPage + 10))}
+                disabled={currentPage >= numPages - 10}
+                className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-all duration-200 disabled:opacity-40"
+                title="Next 10 pages"
+              >
+                <ChevronRight size={16} />
+                <ChevronRight size={16} className="-ml-2" />
+              </button>
+            </div>
+
+            <button
+              onClick={goToNextPage}
+              disabled={currentPage >= numPages}
+              className="group flex items-center gap-2 px-5 py-2.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-medium text-sm shadow-sm hover:shadow-md disabled:hover:shadow-sm"
+            >
+              <span>Next</span>
+              <ChevronRight size={18} className="group-hover:translate-x-0.5 transition-transform duration-200" />
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // Library View
+  const totalStorage = books.reduce((total, book) => total + (book.size || 0), 0)
+
   return (
     <div className={`min-h-screen ${getThemeClasses()} transition-all duration-500`}>
-      <div className="max-w-7xl mx-auto px-8 py-16">
-        {/* Modern Header */}
-        <div className="text-center mb-24">
-          <AppLogo />
-          <div className="inline-flex items-center gap-4 px-8 py-4 bg-white/70 dark:bg-slate-950/70 backdrop-blur-2xl rounded-2xl border border-white/30 dark:border-slate-700/50 mb-10 shadow-xl">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
-              <Book size={20} className="text-white" />
-            </div>
-            <span className="text-lg font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide">Library</span>
-          </div>
-
-          <h1 className="text-5xl md:text-7xl font-black mb-6 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 dark:from-white dark:via-slate-100 dark:to-white bg-clip-text text-transparent leading-tight tracking-tight">
-            Your Digital Library
-          </h1>
-          <p className="text-xl md:text-2xl text-slate-600 dark:text-slate-400 max-w-3xl mx-auto leading-relaxed font-medium">
-            Immerse yourself in beautifully curated reading experiences with intelligent text processing and modern design
-          </p>
-        </div>
-
-        {/* Premium Stats Bar */}
-        <div className="flex justify-center mb-20">
-          <div className="inline-flex gap-12 bg-white/80 dark:bg-slate-950/80 backdrop-blur-3xl rounded-3xl px-12 py-8 border border-white/40 dark:border-slate-700/60 shadow-2xl shadow-slate-900/20">
-            <div className="text-center group">
-              <div className="text-6xl font-black text-blue-600 dark:text-blue-400 mb-3 group-hover:scale-110 transition-transform duration-300 drop-shadow-sm">
-                {books.length}
-              </div>
-              <div className="text-lg font-bold text-slate-700 dark:text-slate-400 uppercase tracking-wider">Books</div>
-              <div className="w-16 h-1 bg-gradient-to-r from-blue-500 to-transparent rounded-full mx-auto mt-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-            </div>
-            <div className="w-px bg-slate-400/40 dark:bg-slate-600/40"></div>
-            <div className="text-center group">
-              <div className="text-6xl font-black text-green-600 dark:text-green-400 mb-3 group-hover:scale-110 transition-transform duration-300 drop-shadow-sm">
-                {books.reduce((total, book) => total + (book.size || 0), 0) ? formatFileSize(books.reduce((total, book) => total + (book.size || 0), 0)) : '0 B'}
-              </div>
-              <div className="text-lg font-bold text-slate-700 dark:text-slate-400 uppercase tracking-wider">Storage</div>
-              <div className="w-16 h-1 bg-gradient-to-r from-green-500 to-transparent rounded-full mx-auto mt-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-            </div>
-          </div>
-        </div>
-
-        {/* Premium Action Bar */}
-        <div className="flex justify-center items-center gap-6 mb-24 flex-wrap">
-          {/* Elegant Theme Toggle */}
-          <div className="flex items-center gap-2 bg-white/80 dark:bg-slate-950/80 backdrop-blur-3xl rounded-3xl p-2 border border-white/40 dark:border-slate-700/60 shadow-2xl shadow-slate-900/20">
-            <button
-              onClick={() => changeTheme('light')}
-              className={`p-3 rounded-2xl transition-all duration-300 ${theme === 'light' ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-xl scale-110' : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/30 dark:hover:bg-slate-700/50'}`}
-              title="Light Theme"
-              aria-pressed={theme === 'light'}
-            >
-              <Sun size={20} />
-            </button>
-            <button
-              onClick={() => changeTheme('sepia')}
-              className={`p-3 rounded-2xl transition-all duration-300 ${theme === 'sepia' ? 'bg-amber-100 dark:bg-amber-900/70 text-amber-700 dark:text-amber-300 shadow-xl scale-110' : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/30 dark:hover:bg-slate-700/50'}`}
-              title="Sepia Theme"
-              aria-pressed={theme === 'sepia'}
-            >
-              <Palette size={20} />
-            </button>
-            <button
-              onClick={() => changeTheme('dark')}
-              className={`p-3 rounded-2xl transition-all duration-300 ${theme === 'dark' ? 'bg-slate-700 text-white shadow-xl scale-110' : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/30 dark:hover:bg-slate-700/50'}`}
-              title="Dark Theme"
-              aria-pressed={theme === 'dark'}
-            >
-              <Moon size={20} />
-            </button>
-          </div>
-          <div className="text-sm font-semibold text-slate-700 dark:text-slate-300 bg-slate-100/60 dark:bg-slate-800/60 px-3 py-2 rounded-full border border-slate-200/50 dark:border-slate-700/50">
-            Active theme: {theme === 'light' ? 'Light' : theme === 'sepia' ? 'Sepia' : 'Dark'}
-          </div>
-
-          {/* Premium Upload Button */}
+      <div className="max-w-7xl mx-auto px-8 py-8">
+        {/* Simple Header: Library on left, Add PDF on right */}
+        <div className="flex items-center justify-between mb-12">
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Library</h1>
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isLoading}
-            className="flex items-center gap-4 px-8 py-4 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 dark:from-white dark:via-slate-100 dark:to-white text-white dark:text-slate-900 rounded-3xl shadow-2xl shadow-slate-900/30 hover:shadow-3xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 font-bold text-lg hover:-translate-y-1"
+            className="flex items-center gap-2 px-6 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
           >
             {isLoading ? (
               <>
-                <div className="animate-spin rounded-full h-6 w-6 border-3 border-white/30 dark:border-slate-900/30 border-t-white dark:border-t-slate-900"></div>
-                <span>Uploading...</span>
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white"></div>
+                <span className="hidden sm:inline">Uploading...</span>
               </>
             ) : (
               <>
-                <Plus size={24} />
-                <span>Add Book</span>
+                <Plus size={18} />
+                <span className="hidden sm:inline">Add PDF</span>
               </>
             )}
           </button>
@@ -884,85 +917,92 @@ function App() {
           />
         </div>
 
-        {/* Premium Empty State */}
+        {/* Book Grid or Empty State */}
         {books.length === 0 ? (
-          <div className="text-center py-32">
-            <div className="relative mb-12">
-              <div className="w-32 h-32 bg-gradient-to-br from-blue-500 via-purple-600 to-indigo-600 rounded-3xl flex items-center justify-center mx-auto shadow-2xl hover:scale-110 transition-transform duration-500">
-                <Book size={72} className="text-white" />
-              </div>
-              <div className="absolute -top-6 -right-6 w-16 h-16 bg-yellow-400 rounded-2xl flex items-center justify-center animate-bounce shadow-2xl">
-                <Plus size={28} className="text-yellow-900 font-bold" />
-              </div>
+          <div className="text-center py-20">
+            <div className="w-24 h-24 bg-slate-200 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <Book size={48} className="text-slate-400 dark:text-slate-600" />
             </div>
-            <h2 className="text-6xl font-black mb-6 text-slate-900 dark:text-white bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-200 bg-clip-text text-transparent">
-              Start Your Journey
+            <h2 className="text-2xl font-bold mb-3 text-slate-900 dark:text-white">
+              No books yet
             </h2>
-            <p className="text-2xl text-slate-600 dark:text-slate-400 mb-12 max-w-2xl mx-auto leading-relaxed font-medium">
-              Upload your first PDF or EPUB and experience the future of intelligent reading with beautiful typography and seamless design
+            <p className="text-slate-600 dark:text-slate-400 mb-8">
+              Upload your first PDF or EPUB to get started
             </p>
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-4 px-10 py-6 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 dark:from-white dark:via-slate-100 dark:to-white text-white dark:text-slate-900 rounded-3xl shadow-2xl shadow-slate-900/30 hover:shadow-3xl transition-all duration-300 text-xl font-bold hover:scale-105 hover:-translate-y-2"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg shadow-lg transition-all font-medium"
             >
-              <Upload size={28} />
-              Upload Your First Book
+              <Upload size={18} />
+              Upload Book
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-            {books.map((book) => (
-              <div
-                key={book.id}
-                className="group relative bg-white/90 dark:bg-slate-950/90 backdrop-blur-3xl rounded-3xl p-8 cursor-pointer hover:bg-white dark:hover:bg-slate-900 border border-white/30 dark:border-slate-700/60 hover:border-blue-300/50 dark:hover:border-blue-500/40 shadow-2xl shadow-slate-900/20 hover:shadow-3xl transition-all duration-500 hover:scale-[1.03] overflow-hidden"
-              >
-                {/* Premium Delete Button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    deleteBook(book.id)
-                  }}
-                  className="absolute top-4 right-4 p-3 bg-red-500 hover:bg-red-600 active:bg-red-700 text-white rounded-2xl shadow-xl border border-red-400/40 transition-all duration-300 hover:scale-110 active:scale-95 md:opacity-0 md:group-hover:opacity-100"
-                  title="Delete book"
-                >
-                  <Trash2 size={18} className="text-white drop-shadow-sm" />
-                </button>
+          <div className="space-y-8">
+            {/* Grid of Book Cards */}
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '16px', padding: '16px'}}>
+              {books.map((book) => {
+                const progress = Math.round(((currentBook?.id === book.id ? currentPage : 1) / numPages) * 100) || 0
+                const colorGradient = generateColorFromTitle(book.name)
+                return (
+                  <div key={book.id}>
+                    {/* Book Cover Card */}
+                    <div
+                      onClick={() => openBook(book)}
+                      style={{
+                        aspectRatio: '3/4',
+                        borderRadius: '12px',
+                        padding: '12px',
+                        position: 'relative',
+                        cursor: 'pointer',
+                        overflow: 'hidden'
+                      }}
+                      className={`bg-gradient-to-br ${colorGradient} shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105`}
+                    >
+                      {/* Delete Button Overlay */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          deleteBook(book.id)
+                        }}
+                        className="absolute top-2 right-2 z-20 p-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg shadow-lg transition-all opacity-0 hover:opacity-100 active:scale-95"
+                        style={{width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
+                        title="Delete book"
+                      >
+                        <Trash2 size={16} />
+                      </button>
 
-                {/* Premium Book Icon */}
-                <div className="flex items-center justify-center mb-8">
-                  <div className="p-6 bg-gradient-to-br from-blue-500 via-purple-600 to-indigo-600 rounded-3xl shadow-2xl group-hover:shadow-3xl transition-all duration-500 group-hover:scale-110 group-hover:rotate-3">
-                    <FileText size={40} className="text-white" />
-                  </div>
-                </div>
-
-                {/* Premium Book Info */}
-                <h3 className="font-bold text-xl mb-4 text-slate-900 dark:text-white text-center leading-tight line-clamp-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors duration-300">
-                  {book.name}
-                </h3>
-                <div className="space-y-3 text-base text-slate-600 dark:text-slate-400 text-center">
-                  <div className="flex items-center justify-center gap-2">
-                    <Clock size={16} />
-                    <span className="font-medium">{new Date(book.uploadedAt).toLocaleDateString()}</span>
-                  </div>
-                  {book.size && (
-                    <div className="font-bold text-slate-700 dark:text-slate-300 text-lg">
-                      {formatFileSize(book.size)}
+                      {/* Title Badge at Bottom */}
+                      <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 to-transparent">
+                        <h3 className="text-white text-xs font-bold line-clamp-2 leading-tight">
+                          {book.name}
+                        </h3>
+                      </div>
                     </div>
-                  )}
-                </div>
 
-                {/* Premium Read Button */}
-                <button
-                  onClick={() => openBook(book)}
-                  className="w-full mt-8 px-6 py-4 bg-gradient-to-r from-green-500 via-blue-500 to-purple-500 hover:from-green-600 hover:via-blue-600 hover:to-purple-600 text-white rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 font-bold text-lg hover:scale-105 active:scale-95 hover:-translate-y-1"
-                >
-                  Read Now
-                </button>
+                    {/* Progress Bar Underneath */}
+                    <div className="mt-2 h-0.5 bg-white/20 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-white transition-all duration-300"
+                        style={{width: `${progress}%`}}
+                      ></div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
 
-                {/* Premium Hover Effect */}
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-purple-500/5 to-indigo-500/10 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+            {/* Stats Tiles at Bottom */}
+            <div className="flex gap-4 mt-12 justify-center">
+              <div style={{background: 'rgba(255,255,255,0.06)', borderRadius: '8px', padding: '8px 16px'}} className="text-center">
+                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Books</div>
+                <div className="text-2xl font-bold text-slate-900 dark:text-white">{books.length}</div>
               </div>
-            ))}
+              <div style={{background: 'rgba(255,255,255,0.06)', borderRadius: '8px', padding: '8px 16px'}} className="text-center">
+                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Storage</div>
+                <div className="text-2xl font-bold text-slate-900 dark:text-white">{formatFileSize(totalStorage)}</div>
+              </div>
+            </div>
           </div>
         )}
       </div>
